@@ -64,7 +64,7 @@ En este momento, el simulador se muere porque aún no ha sido implementado. Pres
 
 4. Ejecuta el hexdump en el simulador de referencia (*ref_sim*), hay dos binarios depende de la arquitectura que tengan.
 
-          ref_sim inputs/addis.x
+          ./ref_sim inputs/addis.x
 
 
 Con '?' pueden mirar todos los comandos que permite el simualador, junto con una explicacion.
