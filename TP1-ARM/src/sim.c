@@ -4,142 +4,12 @@
 #include "shell.h"
 // 138
 
+// define masks for the different sizes
+#define MASK_8 0xFF000000
+#define FIRST_9 0xFF800000 //1111 1111 1000 0000 0000 0000 0000 0000
+#define MASK_16 0xFFFF0000
+#define MASK_32 0xFFFFFFFF
 
-// typedef enum {
-//     ADDS_IMM,
-//     HLT,
-//     SUBS_REG,
-//     SUBS_IMM,
-//     UNKNOWN,
-// } InstructionType;
-
-
-// DecodedInstruction decode_instruction(uint32_t instruction) {
-//     DecodedInstruction d;
-//     memset(&d, 0, sizeof(d));
-
-//     int isImmediate = (instruction >> 22) & 1; // bit 22
-//     printf("Immediate: %d\n", isImmediate);
-
-//     uint32_t opcode = (instruction >> 21) & 0x7FF; //look at bits [31:21]
-
-//     switch(opcode) {
-//         case 0x588:  // 0x588 => ADDS Immediate
-//             d.type = ADDS_IMM;
-//             printf("ADDS Immediate\n");
-//             break;
-//         case 0x6A2:  // 0x6A2 => HLT
-//             d.type = HLT;
-//             printf("HLT\n");
-//             break;
-//         // case 0x784:  // here we should detect that it is inmediate annd then use => 0xF1
-//         //     d.type = SUBS_IMM;
-//         //     printf("SUBS Immediate\n");
-//         //     break;
-//         case 0x785:  // Suppose your assembler yields this for "subs Xd, Xn, Xm"
-//             d.type = SUBS_REG;
-//             printf("SUBS Register\n");
-//             break;
-//         default:
-//             d.type = UNKNOWN;
-//             printf("Unknown\n");
-//             break;
-//     }
-
-//     // Now decode common fields (some instructions might ignore them):
-//     d.rd = instruction & 0x1F;             // bits [4:0]
-//     d.rn = (instruction >> 5) & 0x1F;      // bits [9:5]
-//     int imm12 = (instruction >> 10) & 0xFFF;   // bits [21:10]
-//     int shiftBits = (instruction >> 22) & 0x3; // bits [23:22]
-
-//     // If it's an immediate instruction with a shift:
-//     if (shiftBits == 0b01) {
-//         imm12 <<= 12; // e.g. shift left 12 bits
-//     }
-//     d.imm = imm12;  // store in the struct
-
-//     // If you also need Rm for a register form, you might do something like:
-//     // d.rm = (instruction >> 16) & 0x1F; // depends on the exact encoding
-
-//     return d;
-// }
-
-// DecodedInstruction decode_instruction(uint32_t instruction) {
-//     // We only work with the 64-bit variant of the instruction set.
-//     // So the first most significant bit is always 1.(the sf bit)
-
-//     DecodedInstruction d;
-//     memset(&d, 0, sizeof(d));
-
-//     // First extract the top byte to determine instruction category
-//     // This are the first 8 bits of the instruction
-//     uint32_t topByte = (instruction >> 24) & 0xFF;
-    
-//     // For system instructions like HLT
-//     if (topByte == 0xD4) {
-//         d.type = HLT;
-//         printf("HLT\n");
-//     }
-//     // Data processing immediate (ADDS/SUBS immediate)
-//     else if ((topByte & 0xF0) == 0xF0) {
-//         // Check specific bits for immediate operations
-//         uint32_t op31_29 = (instruction >> 29) & 0x7; // bits [31:29]
-//         uint32_t op25_24 = (instruction >> 24) & 0x3; // bits [25:24]
-        
-//         if (op31_29 == 0x7 && op25_24 == 0x1) {
-//             // This is SUBS immediate
-//             d.type = SUBS_IMM;
-//             printf("SUBS Immediate\n");
-//         } 
-//         else if (op31_29 == 0x2 && op25_24 == 0x1) {
-//             // This is ADDS immediate
-//             d.type = ADDS_IMM;
-//             printf("ADDS Immediate\n");
-//         }
-//     }
-    
-//     // Data processing register (ADDS/SUBS register)
-//     else if ((topByte & 0xFE) == 0xAB) {
-//         // This range is for register-based operations
-//         uint32_t op31_21 = (instruction >> 21) & 0x7FF;
-        
-//         if (op31_21 == 0x785) {
-//             d.type = SUBS_REG;
-//             printf("SUBS Register\n");
-//         }
-//         // Add other register operations here
-//     }
-//     else {
-//         d.type = UNKNOWN;
-//         printf("Unknown\n");
-//     }
-
-//     // Now decode common fields (some instructions might ignore them):
-//     d.rd = instruction & 0x1F;             // bits [4:0]
-//     d.rn = (instruction >> 5) & 0x1F;      // bits [9:5]
-    
-//     // For immediate instructions
-//     if (d.type == SUBS_IMM || d.type == ADDS_IMM) {
-//         int imm12 = (instruction >> 10) & 0xFFF;   // bits [21:10]
-//         int shift = (instruction >> 22) & 0x3;    // bits [23:22]
-        
-//         if (shift == 0x1) {
-//             imm12 <<= 12; // LSL #12
-//         }
-//         d.imm = imm12;
-//     }
-    
-//     // For register form instructions
-//     if (d.type == SUBS_REG) {
-//         d.rm = (instruction >> 16) & 0x1F; // bits [20:16]
-//         // Handle shift type and amount if needed
-//     }
-
-//     return d;
-// }
-
-
-// First, expand your instruction type enum to include all required types
 typedef enum {
     ADDS_IMM,
     ADDS_REG,
@@ -173,9 +43,11 @@ typedef enum {
     CBNZ,
     CMP_IMM,
     CMP_REG,
+    
     SUB_IMM,
     SUB_REG,
     B_COND,
+    
     UNKNOWN
 } InstructionType;
 
@@ -200,13 +72,13 @@ typedef struct {
 
 // Field extraction functions (to be called after matching a pattern)
 void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
-    d->rd = instruction & 0x1F;
-    d->rn = (instruction >> 5) & 0x1F;
-    int imm12 = (instruction >> 10) & 0xFFF;
-    int shift = (instruction >> 22) & 0x3;
+    d->rd = instruction & 0x1F; // (0x1F = 00011111) == [4:0]
+    d->rn = (instruction >> 5) & 0x1F; // 5 Rshift + (0x1F = 00011111) == [9:5]
+    int imm12 = (instruction >> 10) & 0xFFF; // 12 Rshift + (0xFFF = 111111111111) == [21:10]
+    int shift = (instruction >> 22) & 0x3; // 22 Rshift + (0x3 = 11) == [23:22]
     
     if (shift == 0x1) {
-        d->imm = ((int64_t)imm12) << 12;
+        d->imm = ((int64_t)imm12) << 12; // LSL #12
     } else {
         d->imm = imm12;
     }
@@ -214,9 +86,9 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
 }
 
 void extract_register_fields(uint32_t instruction, DecodedInstruction* d) {
-    d->rd = instruction & 0x1F;
-    d->rn = (instruction >> 5) & 0x1F;
-    d->rm = (instruction >> 16) & 0x1F;
+    d->rd = instruction & 0x1F; // (0x1F = 00011111) == [4:0]
+    d->rn = (instruction >> 5) & 0x1F; // 5 Rshift + (0x1F = 00011111) == [9:5]
+    d->rm = (instruction >> 16) & 0x1F; // 16 Rshift + (0x1F = 00011111) == [20:16]
 }
 
 // The pattern table - ordered from most specific to least specific
@@ -268,6 +140,8 @@ const InstructionPattern patterns[] = {
 const int PATTERN_COUNT = sizeof(patterns) / sizeof(patterns[0]);
 
 DecodedInstruction decode_instruction(uint32_t instruction) {
+    
+    // Initialize a decoded instruction with ceros
     DecodedInstruction d;
     memset(&d, 0, sizeof(d));
     
@@ -363,6 +237,15 @@ void process_instruction() {
             break;
         }
 
+        case ADDS_REG: {
+            printf("Executing ADDS Register\n");
+            int64_t result = CURRENT_STATE.REGS[d.rn] + CURRENT_STATE.REGS[d.rm];
+            NEXT_STATE.REGS[d.rd] = result;
+            NEXT_STATE.FLAG_Z = (result == 0);
+            NEXT_STATE.FLAG_N = (result < 0);
+            break;
+        }
+
         case HLT: {
             printf("Executing HLT\n");
             RUN_BIT = 0; // Stop execution
@@ -393,7 +276,7 @@ void process_instruction() {
         // Each will interpret d’s fields as needed.
 
         default:
-            printf("Unknown Instruction\n");
+            printf("Unknown Instruction to execute\n");
             break;
     }
 
