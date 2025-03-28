@@ -13,9 +13,15 @@
 typedef enum {
     ADDS_IMM,
     ADDS_REG,
+    
     SUBS_IMM,
+    
     SUBS_REG,
     HLT,
+
+    CMP_IMM,
+    CMP_REG,
+    
     ANDS_REG,
     EOR_REG,
     ORR_REG,
@@ -41,8 +47,6 @@ typedef enum {
     MUL,
     CBZ,
     CBNZ,
-    CMP_IMM,
-    CMP_REG,
     
     SUB_IMM,
     SUB_REG,
@@ -91,17 +95,32 @@ void extract_register_fields(uint32_t instruction, DecodedInstruction* d) {
     d->rm = (instruction >> 16) & 0x1F; // 16 Rshift + (0x1F = 00011111) == [20:16]
 }
 
+void extract_movz_fields(uint32_t instruction, DecodedInstruction* d) {
+    d->rd = instruction & 0x1F;
+
+    uint16_t imm16 = (instruction >> 5) & 0xFFFF; //[20:5]
+
+    uint32_t hw = (instruction >> 21) & 0x3; //[22:21]
+    
+    if (hw != 0) {
+        printf("Warning: MOVZ with hw != 0 not supported\n");
+    }
+
+    d->imm = imm16;
+    d->shift = 0; // always cero
+}
+
 // The pattern table - ordered from most specific to least specific
 const InstructionPattern patterns[] = {
     // System instructions
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
     
     // Data processing immediate
-    {0xFF800000, 0xF1000000, SUBS_IMM, "SUBS Immediate"},
-    {0xFF800000, 0xB1000000, ADDS_IMM, "ADDS Immediate"},
-    {0xFF800000, 0x91000000, ADD_IMM, "ADD Immediate"},
-    {0xFF800000, 0xD1000000, SUB_IMM, "SUB Immediate"},
-    {0xFF800000, 0xF1000000, CMP_IMM, "CMP Immediate"}, // Same as SUBS but rd=XZR
+    {0xFF800000, 0xF1000000, SUBS_IMM, "SUBS Immediate"},   //1111 0001 0000 XXXX XXXX XXXX XXXX XXXX
+    {0xFF800000, 0xB1000000, ADDS_IMM, "ADDS Immediate"},   // 1011 0001 0000 XXXX XXXX XXXX XXXX XXXX
+    {0xFF800000, 0x91000000, ADD_IMM, "ADD Immediate"},     // 1001 0001 0000 XXXX XXXX XXXX XXXX XXXX
+    {0xFF800000, 0xD1000000, SUB_IMM, "SUB Immediate"},     // 1101 0001 0000 XXXX XXXX XXXX XXXX XXXX
+    {0xFF800000, 0xF1000000, CMP_IMM, "CMP Immediate"},     // Same as SUBS but rd=XZR -> 1111 0001 0000 XXXX XXXX XXXX XXXX 0000
     
     // Data processing register
     {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"},
@@ -112,7 +131,7 @@ const InstructionPattern patterns[] = {
     
     // Logical operations
     {0xFFE0FC00, 0xEA000000, ANDS_REG, "ANDS Register"},
-    {0xFFE0FC00, 0xCA000000, EOR_REG, "EOR Register"},
+    {0xFFE0FC00, 0xCA000000, EOR_REG, "EOR Register"}, // 1100 1010 0000 XXXX XXXX XXXX XXXX XXXX
     {0xFFE0FC00, 0xAA000000, ORR_REG, "ORR Register"},
     
     // Branches
@@ -144,12 +163,27 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
     // Initialize a decoded instruction with ceros
     DecodedInstruction d;
     memset(&d, 0, sizeof(d));
+
+    // Extract rd for special cases e.g CMP
+    int rd = instruction & 0x1F;
     
     // Try to match against each pattern
     for (int i = 0; i < PATTERN_COUNT; i++) {
         if ((instruction & patterns[i].mask) == patterns[i].value) {
-            d.type = patterns[i].type;
-            printf("%s\n", patterns[i].name);
+            // d.type = patterns[i].type;
+            // printf("%s\n", patterns[i].name);
+            if (patterns[i].type == SUBS_IMM && rd == 31) {
+                d.type = CMP_IMM;
+                printf("CMP Immediate (detected via rd=XZR)\n");
+            }
+            else if (patterns[i].type == SUBS_REG && rd == 31) {
+                d.type = CMP_REG;
+                printf("CMP Register (detected via rd=XZR)\n");
+            }
+            else {
+                d.type = patterns[i].type;
+                printf("%s\n", patterns[i].name);
+            }
             
             // Extract fields based on instruction type
             switch (d.type) {
@@ -159,16 +193,24 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case SUB_IMM:
                 case CMP_IMM:
                 case MOVZ:
+                    extract_movz_fields(instruction, &d);
+                    break;
                 case LSL_IMM:
                 case LSR_IMM:
                     extract_immediate_fields(instruction, &d);
                     break;
                     
-                case ADDS_REG:
                 case SUBS_REG:
-                case ADD_REG:
+                    // printf("d.rd: %d\n", d.rd);
+                    // if(d.rd == 31) {
+                    //     d.type = CMP_REG;
+                    //     extract_register_fields(instruction, &d);
+                    //     printf("Detected special case CMP_REG\n");
+                    // };
                 case SUB_REG:
-                case CMP_REG:
+                case ADDS_REG:
+                case ADD_REG:
+                // case CMP_REG:
                 case ANDS_REG:
                 case EOR_REG:
                 case ORR_REG:
@@ -176,25 +218,53 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                     extract_register_fields(instruction, &d);
                     break;
                     
-                // Handle special cases
-                case B:
-                case BEQ:
-                case BNE:
-                    // Extract branch offset
-                    d.imm = ((instruction & 0x3FFFFFF) << 2); 
-                    // Sign extend if needed
-                    if (d.imm & 0x8000000) d.imm |= 0xFFFFFFFF0000000;
-                    break;
+                
+                //     // Handle special cases
+                // case B:
+                // case BEQ:
+                // case BNE:
+                //     // Extract branch offset
+                //     d.imm = ((instruction & 0x3FFFFFF) << 2); 
+                //     // Sign extend if needed
+                //     if (d.imm & 0x8000000) d.imm |= 0xFFFFFFFF0000000;
+                //     break;
                     
-                // More special cases as needed
+                // // More special cases as needed
             }
             
             // Special handling for conditions in B.cond
             if (d.type == B_COND) {
+                // 1) Extract the 4-bit condition from bits [3:0]
                 uint32_t cond = instruction & 0xF;
-                // Map condition code to specific enum
-                // BEQ = 0x0, BNE = 0x1, etc.
+            
+                // 2) Extract the 19-bit signed immediate from bits [23:5]
+                //    and sign-extend it, then shift left by 2.
+                int32_t imm19 = (instruction >> 5) & 0x7FFFF; // 19 bits
+                // sign bit is bit 18 of imm19
+                if (imm19 & (1 << 18)) {
+                    // sign-extend: fill upper bits with 1
+                    imm19 |= ~((1 << 19) - 1);
+                }
+                // Each B.cond offset is left-shifted by 2
+                imm19 <<= 2;
+                d.imm = imm19;
+            
+                // 3) Map cond to your InstructionType
+                switch (cond) {
+                    case 0x0: d.type = BEQ; break; // Z == 1
+                    case 0x1: d.type = BNE; break; // Z == 0
+                    case 0xa: d.type = BGE; break; // N == V (but V=0 => N=0 => X1 >= X2)
+                    case 0xb: d.type = BLT; break; // N != V (V=0 => N=1 => X1 < X2)
+                    case 0xc: d.type = BGT; break; // Z==0 && N==V => (Z=0 && N=0 => X1 > X2)
+                    case 0xd: d.type = BLE; break; // Z==1 || N!=V => (Z=1 || N=1 => X1 <= X2)
+                    default:
+                        // If you don't plan to handle other cond codes, mark as unknown
+                        // or keep d.type = B_COND. Up to you.
+                        d.type = UNKNOWN;
+                        break;
+                }
             }
+            
             
             return d;
         }
@@ -205,6 +275,104 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
     printf("Unknown instruction\n");
     return d;
 }
+
+void update_flags(int64_t result, int updateFlags) {
+    if (updateFlags) {
+        NEXT_STATE.FLAG_Z = (result == 0);    // Zero flag - set if result is zero
+        NEXT_STATE.FLAG_N = (result < 0);     // Negative flag - set if result is negative
+        
+        // Note: C and V flags are assumed to be 0 for all operations per requirements
+    }
+}
+
+
+void adds_imm(DecodedInstruction d) {
+    printf("Executing ADDS_IMM\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] + d.imm;
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 1);
+}
+
+void adds_reg(DecodedInstruction d) {
+    printf("Executing ADDS_REG\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] + CURRENT_STATE.REGS[d.rm];
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 1);
+}
+
+void subs_imm(DecodedInstruction d) {
+    printf("Executing SUBS_IMM\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] - d.imm;
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 1);
+}
+
+void subs_reg(DecodedInstruction d) {
+    printf("Executing SUBS_REG\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] - CURRENT_STATE.REGS[d.rm];
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 1);
+}
+
+void hlt() {
+    printf("Executing HLT\n");
+    RUN_BIT = 0;
+}
+
+void cmp_imm(DecodedInstruction d) {
+    printf("Executing CMP_IMM\n");
+    // CMP Rd, imm - subtracts the immediate from Rd and updates flags
+    int64_t result = CURRENT_STATE.REGS[d.rd] - d.imm;
+    update_flags(result, 1);
+}
+
+void cmp_reg(DecodedInstruction d) {
+    printf("Executing CMP_REG\n");
+    // CMP Rd, Rm - subtracts Rm from Rd and updates flags
+    int64_t result = CURRENT_STATE.REGS[d.rd] - CURRENT_STATE.REGS[d.rm];
+    update_flags(result, 1);
+}
+
+void ands_reg(DecodedInstruction d) {
+    printf("Executing ANDS_REG\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] & CURRENT_STATE.REGS[d.rm];
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 1);
+}
+
+void eor_reg(DecodedInstruction d) {
+    printf("Executing EOR_REG\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] ^ CURRENT_STATE.REGS[d.rm];
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 0);
+}
+
+void orr_reg(DecodedInstruction d) {
+    printf("Executing ORR_REG\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] | CURRENT_STATE.REGS[d.rm];
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 0);
+}
+
+
+void add_imm(DecodedInstruction d) {
+    printf("Executing ADD_IMM\n");
+    // ADD Rd, Rn, imm - adds the immediate to Rn and stores in Rd
+    int64_t result = CURRENT_STATE.REGS[d.rn] + d.imm;
+    NEXT_STATE.REGS[d.rd] = result;
+    // Regular ADD does not update flags (use 0 as second parameter)
+    update_flags(result, 0);  // 0 means don't update flags
+}
+
+
+
+// void beq(DecodedInstruction d) {
+//     printf("Executing BEQ\n");
+//     // BEQ imm - branch if equal
+//     if (CURRENT_STATE.FLAG_Z) {
+//         NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+//     }
+// }
 
 void process_instruction() {
     printf("-------------------------- Processing instruction --------------------------\n\n");
@@ -229,48 +397,107 @@ void process_instruction() {
     // Execute
     switch (d.type) {
         case ADDS_IMM: {
-            printf("Executing ADDS Immediate\n");
-            int64_t result = CURRENT_STATE.REGS[d.rn] + d.imm;
-            NEXT_STATE.REGS[d.rd] = result;
-            NEXT_STATE.FLAG_Z = (result == 0);
-            NEXT_STATE.FLAG_N = (result < 0);
+            adds_imm(d);
             break;
         }
 
         case ADDS_REG: {
-            printf("Executing ADDS Register\n");
-            int64_t result = CURRENT_STATE.REGS[d.rn] + CURRENT_STATE.REGS[d.rm];
-            NEXT_STATE.REGS[d.rd] = result;
-            NEXT_STATE.FLAG_Z = (result == 0);
-            NEXT_STATE.FLAG_N = (result < 0);
-            break;
-        }
-
-        case HLT: {
-            printf("Executing HLT\n");
-            RUN_BIT = 0; // Stop execution
+            adds_reg(d);
             break;
         }
 
         case SUBS_IMM: {
-            // Use d.imm
-            int64_t lhs = CURRENT_STATE.REGS[d.rn];
-            int64_t rhs = d.imm; 
-            int64_t result = lhs - rhs;
-            NEXT_STATE.REGS[d.rd] = result;
-            NEXT_STATE.FLAG_Z = (result == 0);
-            NEXT_STATE.FLAG_N = (result < 0);
+            subs_imm(d);
             break;
         }
 
         case SUBS_REG: {
-            // Use d.rm
-            int64_t lhs = CURRENT_STATE.REGS[d.rn];
-            int64_t rhs = CURRENT_STATE.REGS[d.rm];
-            int64_t result = lhs - rhs;
+            subs_reg(d);
             break;
         }
-        
+
+        case ANDS_REG: {
+            ands_reg(d);
+            break;
+        }
+
+        case CMP_IMM: {
+            cmp_imm(d);
+            break;
+        }
+        case CMP_REG: {
+            cmp_reg(d);
+            break;
+        }
+
+        case HLT: {
+            hlt();
+            break;
+        }
+
+        case EOR_REG: {
+            eor_reg(d);
+            break;
+        }
+
+        case ORR_REG: {
+            orr_reg(d);
+            break;
+        }
+
+        case BEQ:
+        printf("Detected special B.cond case BEQ\n");
+        printf("Executing BEQ\n");
+        // Branch if Z == 1
+        if (CURRENT_STATE.FLAG_Z == 1) {
+            NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+        }
+        break;
+
+        case BNE:
+            printf("Detected special B.cond case BNE\n");
+            printf("Executing BNE\n");
+            // Branch if Z == 0
+            if (CURRENT_STATE.FLAG_Z == 0) {
+                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+            }
+            break;
+
+        case BGT:
+            printf("Detected special B.cond case BGT\n");
+            printf("Executing BGT\n");
+            // Branch if (Z == 0 && N == 0) under your assumption C=V=0
+            if (CURRENT_STATE.FLAG_Z == 0 && CURRENT_STATE.FLAG_N == 0) {
+                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+            }
+            break;
+
+        case BLT:
+            printf("Detected special B.cond case BLT\n");
+            printf("Executing BLT\n");
+            // Branch if N == 1
+            if (CURRENT_STATE.FLAG_N == 1) {
+                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+            }
+            break;
+
+        case BGE:
+            printf("Detected special B.cond case BGE\n");
+            printf("Executing BGE\n");
+            // Branch if N == 0
+            if (CURRENT_STATE.FLAG_N == 0) {
+                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+            }
+            break;
+
+        case BLE:
+            printf("Detected special B.cond case BLE\n");
+            printf("Executing BLE\n");
+            // Branch if Z == 1 || N == 1
+            if (CURRENT_STATE.FLAG_Z == 1 || CURRENT_STATE.FLAG_N == 1) {
+                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+            }
+            break;        
 
         // Add more cases: SUBS_IMM, ADD_IMM, B, etc.
         // Each will interpret d’s fields as needed.
