@@ -110,6 +110,17 @@ void extract_movz_fields(uint32_t instruction, DecodedInstruction* d) {
     d->shift = 0; // always cero
 }
 
+void extract_shift_fields(uint32_t instruction, DecodedInstruction* d) {
+    d->rd = instruction & 0x1F;                   // bits [4:0]
+    d->rn = (instruction >> 5) & 0x1F;           // bits [9:5]
+    
+    // For LSL/LSR, the shift amount is in bits [15:10]
+    int shift_amount = (instruction >> 10) & 0x3F;
+    
+    d->imm = shift_amount;  // Store shift amount in imm field
+    d->shift = 0;           // Not used for these instructions
+}
+
 // The pattern table - ordered from most specific to least specific
 const InstructionPattern patterns[] = {
     // System instructions
@@ -123,7 +134,7 @@ const InstructionPattern patterns[] = {
     {0xFF800000, 0xF1000000, CMP_IMM, "CMP Immediate"},     // Same as SUBS but rd=XZR -> 1111 0001 0000 XXXX XXXX XXXX XXXX 0000
     
     // Data processing register
-    {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"},
+    {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"}, //
     {0xFFE0FC00, 0xEB000000, SUBS_REG, "SUBS Register"},
     {0xFFE0FC00, 0x8B000000, ADD_REG, "ADD Register"},
     {0xFFE0FC00, 0xCB000000, SUB_REG, "SUB Register"},
@@ -153,7 +164,7 @@ const InstructionPattern patterns[] = {
     {0xFF800000, 0xD2800000, MOVZ, "MOVZ"},
     {0xFFE0FC00, 0x9B000000, MUL, "MUL"},
     {0xFFC00000, 0xD3400000, LSL_IMM, "LSL Immediate"},
-    {0xFFC00000, 0xD3400000, LSR_IMM, "LSR Immediate"}
+    {0xFFC00000, 0xD3800000, LSR_IMM, "LSR Immediate"} //this can be the wrong code
 };
 
 const int PATTERN_COUNT = sizeof(patterns) / sizeof(patterns[0]);
@@ -191,22 +202,16 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case SUBS_IMM:
                 case ADD_IMM:
                 case SUB_IMM:
-                case CMP_IMM:
+                // case CMP_IMM:
                 case MOVZ:
                     extract_movz_fields(instruction, &d);
                     break;
                 case LSL_IMM:
                 case LSR_IMM:
-                    extract_immediate_fields(instruction, &d);
+                    extract_shift_fields(instruction, &d);
                     break;
                     
                 case SUBS_REG:
-                    // printf("d.rd: %d\n", d.rd);
-                    // if(d.rd == 31) {
-                    //     d.type = CMP_REG;
-                    //     extract_register_fields(instruction, &d);
-                    //     printf("Detected special case CMP_REG\n");
-                    // };
                 case SUB_REG:
                 case ADDS_REG:
                 case ADD_REG:
@@ -217,19 +222,6 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case MUL:
                     extract_register_fields(instruction, &d);
                     break;
-                    
-                
-                //     // Handle special cases
-                // case B:
-                // case BEQ:
-                // case BNE:
-                //     // Extract branch offset
-                //     d.imm = ((instruction & 0x3FFFFFF) << 2); 
-                //     // Sign extend if needed
-                //     if (d.imm & 0x8000000) d.imm |= 0xFFFFFFFF0000000;
-                //     break;
-                    
-                // // More special cases as needed
             }
             
             // Special handling for conditions in B.cond
@@ -354,6 +346,178 @@ void orr_reg(DecodedInstruction d) {
     update_flags(result, 0);
 }
 
+void movz(DecodedInstruction d) {
+    printf("Executing MOVZ\n");
+    NEXT_STATE.REGS[d.rd] = d.imm;
+}
+
+void stur(DecodedInstruction d) {
+    printf("Executing STUR\n");
+    //stur X1, [X2, #0x10] (descripción: M[X2 + 0x10] = X1)
+    
+    // Calculate memory address: base register + immediate offset
+    uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
+    
+    // Store full 64-bit value from Xn to memory
+    // Since mem_write_32 only writes 32 bits at a time, we need two operations
+    
+    // Write low 32 bits
+    uint32_t lower_word = (uint32_t)(CURRENT_STATE.REGS[d.rd] & 0xFFFFFFFF);
+    mem_write_32(address, lower_word);
+    
+    // Write high 32 bits
+    uint32_t upper_word = (uint32_t)((CURRENT_STATE.REGS[d.rd] >> 32) & 0xFFFFFFFF);
+    mem_write_32(address + 4, upper_word);
+    
+    printf("Stored 0x%lx at address 0x%lx\n", CURRENT_STATE.REGS[d.rd], address);
+}
+
+
+void sturh(DecodedInstruction d) {
+    printf("Executing STURH\n");
+    
+    // Calculate memory address
+    uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
+    
+    // Read the current memory value so we can preserve other halfwords
+    uint32_t current_value = mem_read_32(address);
+    
+    // Extract halfword position within the word (0-1)
+    int halfword_position = (address & 0x3) >> 1;
+    
+    // Extract the lowest halfword of the register to store
+    uint16_t halfword_to_store = CURRENT_STATE.REGS[d.rd] & 0xFFFF;
+    
+    // Clear the target halfword in current value and set new halfword
+    uint32_t halfword_mask = 0xFFFF << (halfword_position * 16);
+    uint32_t new_value = (current_value & ~halfword_mask) | 
+                        (halfword_to_store << (halfword_position * 16));
+    
+    // Write back to memory
+    mem_write_32(address & ~0x3, new_value);
+    
+    printf("Stored halfword 0x%x at address 0x%lx\n", halfword_to_store, address);
+}
+
+void sturb(DecodedInstruction d) {
+    printf("Executing STURB\n");
+    
+    // Calculate memory address
+    uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
+    
+    // Read the current memory value so we can preserve other bytes
+    uint32_t current_value = mem_read_32(address);
+    
+    // Extract byte position within the word (0-3)
+    int byte_position = address & 0x3;
+    
+    // Extract the lowest byte of the register to store
+    uint8_t byte_to_store = CURRENT_STATE.REGS[d.rd] & 0xFF;
+    
+    // Clear the target byte in current value and set new byte
+    uint32_t byte_mask = 0xFF << (byte_position * 8);
+    uint32_t new_value = (current_value & ~byte_mask) | 
+                         (byte_to_store << (byte_position * 8));
+    
+    // Write back to memory
+    mem_write_32(address & ~0x3, new_value);
+    
+    printf("Stored byte 0x%x at address 0x%lx\n", byte_to_store, address);
+}
+
+void lsl_imm(DecodedInstruction d) {
+    printf("Executing LSL_IMM\n");
+    
+    int shift_amount = d.imm;
+    
+    int64_t result = CURRENT_STATE.REGS[d.rn] << shift_amount;
+    NEXT_STATE.REGS[d.rd] = result;
+    
+    printf("X%d = X%d << %d = 0x%lx\n", d.rd, d.rn, shift_amount, result);
+}
+
+
+void lsr_imm(DecodedInstruction d) {
+    printf("Executing LSR_IMM\n");
+    
+    int shift_amount = d.imm;
+    
+    // Use unsigned right shift to ensure zero-filling from left
+    uint64_t unsigned_value = (uint64_t)CURRENT_STATE.REGS[d.rn];
+    uint64_t result = unsigned_value >> shift_amount;
+    
+    NEXT_STATE.REGS[d.rd] = (int64_t)result;
+    printf("X%d = X%d >> %d = 0x%lx\n", d.rd, d.rn, shift_amount, (int64_t)result);
+}
+
+// Load operations
+void ldur(DecodedInstruction d) {
+    printf("Executing LDUR\n");
+    
+    // Calculate memory address
+    uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
+    
+    // Load 64-bit value from memory (two 32-bit reads)
+    uint32_t lower_word = mem_read_32(address);
+    uint32_t upper_word = mem_read_32(address + 4);
+    
+    // Combine into 64-bit result
+    int64_t result = ((int64_t)upper_word << 32) | lower_word;
+    
+    // Store in destination register
+    NEXT_STATE.REGS[d.rd] = result;
+    
+    printf("X%d = Memory[0x%lx] = 0x%lx\n", d.rd, address, result);
+}
+
+void ldurh(DecodedInstruction d) {
+    printf("Executing LDURH\n");
+    
+    // Calculate memory address
+    uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
+    
+    // Read the 32-bit word containing our halfword
+    uint32_t word = mem_read_32(address & ~0x3);
+    
+    // Extract halfword position within the word (0 or 1)
+    int halfword_position = (address & 0x2) >> 1;
+    
+    // Extract the halfword (16 bits)
+    uint16_t halfword = (word >> (halfword_position * 16)) & 0xFFFF;
+    
+    // Zero-extend to 64 bits (48 zeros followed by 16 bits)
+    int64_t result = halfword;
+    
+    // Store in destination register
+    NEXT_STATE.REGS[d.rd] = result;
+    
+    printf("X%d = Zero-extend(Memory[0x%lx](15:0)) = 0x%lx\n", d.rd, address, result);
+}
+
+void ldurb(DecodedInstruction d) {
+    printf("Executing LDURB\n");
+    
+    // Calculate memory address
+    uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
+    
+    // Read the 32-bit word containing our byte
+    uint32_t word = mem_read_32(address & ~0x3);
+    
+    // Extract byte position within the word (0-3)
+    int byte_position = address & 0x3;
+    
+    // Extract the byte (8 bits)
+    uint8_t byte_value = (word >> (byte_position * 8)) & 0xFF;
+    
+    // Zero-extend to 64 bits (56 zeros followed by 8 bits)
+    int64_t result = byte_value;
+    
+    // Store in destination register
+    NEXT_STATE.REGS[d.rd] = result;
+    
+    printf("X%d = Zero-extend(Memory[0x%lx](7:0)) = 0x%lx\n", d.rd, address, result);
+}
+
 
 void add_imm(DecodedInstruction d) {
     printf("Executing ADD_IMM\n");
@@ -364,15 +528,6 @@ void add_imm(DecodedInstruction d) {
     update_flags(result, 0);  // 0 means don't update flags
 }
 
-
-
-// void beq(DecodedInstruction d) {
-//     printf("Executing BEQ\n");
-//     // BEQ imm - branch if equal
-//     if (CURRENT_STATE.FLAG_Z) {
-//         NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
-//     }
-// }
 
 void process_instruction() {
     printf("-------------------------- Processing instruction --------------------------\n\n");
@@ -442,6 +597,44 @@ void process_instruction() {
 
         case ORR_REG: {
             orr_reg(d);
+            break;
+        }
+
+        case MOVZ: {
+            movz(d);
+            break;
+        }
+
+        case STUR: {
+            stur(d);
+            break;
+        }
+        case STURB: {
+            sturb(d);
+            break;
+        }
+        case STURH: {
+            sturh(d);
+            break;
+        }
+        case LSL_IMM: {
+            lsl_imm(d);
+            break;
+        }
+        case LSR_IMM: {
+            lsr_imm(d);
+            break;
+        }
+        case LDUR: {
+            ldur(d);
+            break;
+        }
+        case LDURH: {
+            ldurh(d);
+            break;
+        }
+        case LDURB: {
+            ldurb(d);
             break;
         }
 
