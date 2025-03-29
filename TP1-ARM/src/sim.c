@@ -74,12 +74,28 @@ typedef struct {
     const char* name;       // Human-readable name for debugging
 } InstructionPattern;
 
+void show_instruction(DecodedInstruction d) {
+    printf("Decoded Instruction: ");
+    printf("Type: %d", d.type);
+    printf(" | rd: %d", d.rd);
+    printf(" | rn: %d", d.rn);
+    printf(" | rm: %d", d.rm);
+    printf(" | imm: %ld", d.imm);
+    printf(" | shift: %d", d.shift);
+    printf("\n");
+}
+
 // Field extraction functions (to be called after matching a pattern)
 void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
-    d->rd = instruction & 0x1F; // (0x1F = 00011111) == [4:0]
-    d->rn = (instruction >> 5) & 0x1F; // 5 Rshift + (0x1F = 00011111) == [9:5]
-    int imm12 = (instruction >> 10) & 0xFFF; // 12 Rshift + (0xFFF = 111111111111) == [21:10]
-    int shift = (instruction >> 22) & 0x3; // 22 Rshift + (0x3 = 11) == [23:22]
+//     Las instrucciones LSL y LSR, y como mencionamos en el punto 4 ADDS y SUBS usan
+// shift. Para todas las demás instrucciones, pueden asumir que el shift (o shift amount
+// [shamt]) es cero.
+    
+    d->rd = instruction & 0x1F; // [4:0]
+    d->rn = (instruction >> 5) & 0x1F; // [9:5]
+    
+    int imm12 = (instruction >> 10) & 0xFFF; // [21:10]
+    int shift = (instruction >> 22) & 0x3; //[23:22]
     
     if (shift == 0x1) {
         d->imm = ((int64_t)imm12) << 12; // LSL #12
@@ -90,9 +106,9 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
 }
 
 void extract_register_fields(uint32_t instruction, DecodedInstruction* d) {
-    d->rd = instruction & 0x1F; // (0x1F = 00011111) == [4:0]
-    d->rn = (instruction >> 5) & 0x1F; // 5 Rshift + (0x1F = 00011111) == [9:5]
-    d->rm = (instruction >> 16) & 0x1F; // 16 Rshift + (0x1F = 00011111) == [20:16]
+    d->rd = instruction & 0x1F; // [4:0]
+    d->rn = (instruction >> 5) & 0x1F; // [9:5]
+    d->rm = (instruction >> 16) & 0x1F; // [20:16]
 }
 
 void extract_movz_fields(uint32_t instruction, DecodedInstruction* d) {
@@ -114,14 +130,40 @@ void extract_shift_fields(uint32_t instruction, DecodedInstruction* d) {
     d->rd = instruction & 0x1F;                   // bits [4:0]
     d->rn = (instruction >> 5) & 0x1F;           // bits [9:5]
     
-    // For LSL/LSR, the shift amount is in bits [15:10]
-    int shift_amount = (instruction >> 10) & 0x3F;
+    // For LSL/LSR
+    uint32_t immr = (instruction >> 16) & 0x3F;  // bits [21:16]
     
-    d->imm = shift_amount;  // Store shift amount in imm field
-    d->shift = 0;           // Not used for these instructions
+    // For LSL or LSR based on the opcode pattern
+    if ((instruction & 0xFFC00000) == 0xD3400000) {
+        d->imm = (64 - immr) % 64;
+    } 
+    else if ((instruction & 0xFFC00000) == 0xD3800000) {
+        d->imm = immr;
+    }
+    else {
+        d->imm = (instruction >> 10) & 0x3F;  //[15:10]
+    }
+    
+    d->shift = 0;
+    
+    printf("Extracted shift amount: %ld\n", d->imm);
 }
 
-// The pattern table - ordered from most specific to least specific
+void extract_memory_fields(uint32_t instruction, DecodedInstruction* d) {
+    d->rd = instruction & 0x1F;                // bits [4:0]
+    d->rn = (instruction >> 5) & 0x1F;         // bits [9:5]
+    int imm9 = (instruction >> 12) & 0x1FF;    // bits [20:12]
+    
+    // Sign extend imm9 (if bit 8 is set, fill bits 9-63 with 1s)
+    if (imm9 & 0x100) {
+        imm9 |= ~0x1FF;  // Sign extension
+    }
+    
+    d->imm = imm9;
+}
+
+// Instructions patterns 
+// Ordered from most specific to least specific to prevent false positives
 const InstructionPattern patterns[] = {
     // System instructions
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
@@ -181,8 +223,6 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
     // Try to match against each pattern
     for (int i = 0; i < PATTERN_COUNT; i++) {
         if ((instruction & patterns[i].mask) == patterns[i].value) {
-            // d.type = patterns[i].type;
-            // printf("%s\n", patterns[i].name);
             if (patterns[i].type == SUBS_IMM && rd == 31) {
                 d.type = CMP_IMM;
                 printf("CMP Immediate (detected via rd=XZR)\n");
@@ -193,7 +233,7 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
             }
             else {
                 d.type = patterns[i].type;
-                printf("%s\n", patterns[i].name);
+                printf("Detected Instruction: %s\n", patterns[i].name);
             }
             
             // Extract fields based on instruction type
@@ -209,6 +249,15 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case LSL_IMM:
                 case LSR_IMM:
                     extract_shift_fields(instruction, &d);
+                    break;
+                
+                case STUR:
+                case STURB:
+                case STURH:
+                case LDUR:
+                case LDURB:
+                case LDURH:
+                    extract_memory_fields(instruction, &d);
                     break;
                     
                 case SUBS_REG:
@@ -450,21 +499,19 @@ void lsr_imm(DecodedInstruction d) {
     printf("X%d = X%d >> %d = 0x%lx\n", d.rd, d.rn, shift_amount, (int64_t)result);
 }
 
-// Load operations
+
 void ldur(DecodedInstruction d) {
     printf("Executing LDUR\n");
     
-    // Calculate memory address
     uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
     
     // Load 64-bit value from memory (two 32-bit reads)
     uint32_t lower_word = mem_read_32(address);
     uint32_t upper_word = mem_read_32(address + 4);
     
-    // Combine into 64-bit result
-    int64_t result = ((int64_t)upper_word << 32) | lower_word;
+    // Combine into 64-bit result - use unsigned to avoid sign extension
+    uint64_t result = ((uint64_t)upper_word << 32) | (uint64_t)lower_word;
     
-    // Store in destination register
     NEXT_STATE.REGS[d.rd] = result;
     
     printf("X%d = Memory[0x%lx] = 0x%lx\n", d.rd, address, result);
@@ -528,23 +575,72 @@ void add_imm(DecodedInstruction d) {
     update_flags(result, 0);  // 0 means don't update flags
 }
 
+void beq(DecodedInstruction d) {
+    printf("Executing BEQ\n");
+    // Branch if Z == 1
+    if (CURRENT_STATE.FLAG_Z == 1) {
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
+void bne(DecodedInstruction d) {
+    printf("Executing BNE\n");
+    // Branch if Z == 0
+    if (CURRENT_STATE.FLAG_Z == 0) {
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
+void bgt(DecodedInstruction d) {
+    printf("Executing BGT\n");
+    // Branch if (Z == 0 && N == 0) under your assumption C=V=0
+    if (CURRENT_STATE.FLAG_Z == 0 && CURRENT_STATE.FLAG_N == 0) {
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
+void blt(DecodedInstruction d) {
+    printf("Executing BLT\n");
+    // Branch if N == 1
+    if (CURRENT_STATE.FLAG_N == 1) {
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
+void bge(DecodedInstruction d) {
+    printf("Executing BGE\n");
+    // Branch if N == 0
+    if (CURRENT_STATE.FLAG_N == 0) {
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
+void ble(DecodedInstruction d) {
+    printf("Executing BLE\n");
+    // Branch if Z == 1 || N == 1
+    if (CURRENT_STATE.FLAG_Z == 1 || CURRENT_STATE.FLAG_N == 1) {
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
 
 void process_instruction() {
     printf("-------------------------- Processing instruction --------------------------\n\n");
 
     // Fetch
     uint32_t instruction = mem_read_32(CURRENT_STATE.PC);
-    printf("Instruction: 0x%08X\n", instruction);
-    //in binary
-    printf("Instruction in binary: ");
-    for (int i = 31; i >= 0; i--) {
-        printf("%d", (instruction >> i) & 1);
-        if (i % 4 == 0) printf(" ");
-    }
-    printf("\n");
+    // printf("Instruction: 0x%08X\n", instruction);
+    // //in binary
+    // printf("Instruction in binary: ");
+    // for (int i = 31; i >= 0; i--) {
+    //     printf("%d", (instruction >> i) & 1);
+    //     if (i % 4 == 0) printf(" ");
+    // }
+    // printf("\n");
 
     //Decode
     DecodedInstruction d = decode_instruction(instruction);
+    show_instruction(d);
 
     // Increment PC by default (some instructions might override)
     NEXT_STATE.PC = CURRENT_STATE.PC + 4;
@@ -638,68 +734,37 @@ void process_instruction() {
             break;
         }
 
-        case BEQ:
-        printf("Detected special B.cond case BEQ\n");
-        printf("Executing BEQ\n");
-        // Branch if Z == 1
-        if (CURRENT_STATE.FLAG_Z == 1) {
-            NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+        case BEQ: {
+            beq(d);
+            break;
         }
-        break;
 
-        case BNE:
-            printf("Detected special B.cond case BNE\n");
-            printf("Executing BNE\n");
-            // Branch if Z == 0
-            if (CURRENT_STATE.FLAG_Z == 0) {
-                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
-            }
+        case BNE: {
+            bne(d);
             break;
+        }
 
-        case BGT:
-            printf("Detected special B.cond case BGT\n");
-            printf("Executing BGT\n");
-            // Branch if (Z == 0 && N == 0) under your assumption C=V=0
-            if (CURRENT_STATE.FLAG_Z == 0 && CURRENT_STATE.FLAG_N == 0) {
-                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
-            }
+        case BGT: {
+            bgt(d);
             break;
+        }
 
-        case BLT:
-            printf("Detected special B.cond case BLT\n");
-            printf("Executing BLT\n");
-            // Branch if N == 1
-            if (CURRENT_STATE.FLAG_N == 1) {
-                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
-            }
+        case BLT: {
+            blt(d);
             break;
+        }
 
-        case BGE:
-            printf("Detected special B.cond case BGE\n");
-            printf("Executing BGE\n");
-            // Branch if N == 0
-            if (CURRENT_STATE.FLAG_N == 0) {
-                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
-            }
+        case BGE: {
+            bge(d);
             break;
+        }
 
-        case BLE:
-            printf("Detected special B.cond case BLE\n");
-            printf("Executing BLE\n");
-            // Branch if Z == 1 || N == 1
-            if (CURRENT_STATE.FLAG_Z == 1 || CURRENT_STATE.FLAG_N == 1) {
-                NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
-            }
-            break;        
-
-        // Add more cases: SUBS_IMM, ADD_IMM, B, etc.
-        // Each will interpret d’s fields as needed.
+        case BLE: {
+            ble(d);
+            break;
+        } 
 
         default:
-            printf("Unknown Instruction to execute\n");
             break;
     }
-
-    // The shell’s cycle() will do: CURRENT_STATE = NEXT_STATE;
-    printf("Instruction processed\n\n");
 }
