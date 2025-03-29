@@ -66,7 +66,7 @@ typedef struct {
     int shift; // shift amount (if applicable)
 
     // int updates_flags;         // Whether instruction updates flags (1) or not (0)
-    // int cond_code;             // For branch conditions (EQ=0, NE=1, etc.)
+    int cond;             // For branch conditions (EQ=0, NE=1, etc.)
     // int mem_size;              // Memory operation size in bytes (1, 2, 4, 8)
     // int64_t branch_target;     // Calculated absolute address for branches
 
@@ -90,11 +90,19 @@ void show_instruction(DecodedInstruction d) {
     printf("\n");
 }
 
+void show_instruction_in_binary(DecodedInstruction d) {
+    printf("Instruction in binary: ");
+    for (int i = 31; i >= 0; i--) {
+        printf("%d", (d.instruction >> i) & 1);
+        if (i % 4 == 0) printf(" ");
+    }
+    printf("\n");
+}
+
 // Field extraction functions (to be called after matching a pattern)
+
 void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
-//     Las instrucciones LSL y LSR, y como mencionamos en el punto 4 ADDS y SUBS usan
-// shift. Para todas las demás instrucciones, pueden asumir que el shift (o shift amount
-// [shamt]) es cero.
+//     Las instrucciones LSL y LSR, y como mencionamos en el punto 4 ADDS y SUBS usan shift. Para todas las demás instrucciones, pueden asumir que el shift (o shift amount [shamt]) es cero.
     
     d->rd = instruction & 0x1F; // [4:0]
     d->rn = (instruction >> 5) & 0x1F; // [9:5]
@@ -168,6 +176,23 @@ void extract_memory_fields(uint32_t instruction, DecodedInstruction* d) {
     d->imm = imm9;
 }
 
+void extract_bcond_fields(uint32_t instruction, DecodedInstruction* d) {
+    // Extract the 4-bit condition from bits [3:0]
+    d->cond = instruction & 0xF;
+    
+    // Extract the 19-bit signed immediate from bits [23:5]
+    int32_t imm19 = (instruction >> 5) & 0x7FFFF;
+    
+    // Sign-extend if necessary
+    if (imm19 & (1 << 18)) {
+        imm19 |= ~((1 << 19) - 1);
+    }
+    
+    // Each B.cond offset is left-shifted by 2
+    imm19 <<= 2;
+    d->imm = imm19;
+}
+
 // Instructions patterns 
 // Ordered from most specific to least specific to prevent false positives
 const InstructionPattern patterns[] = {
@@ -236,22 +261,6 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
     for (int i = 0; i < PATTERN_COUNT; i++) {
         if ((instruction & patterns[i].mask) == patterns[i].value) {
             
-            // //special case for CMP
-            // if (patterns[i].type == SUBS_IMM && rd == 31) {
-            //     d.type = CMP_IMM;
-            //     printf("CMP Immediate (detected via rd=XZR)\n");
-            // }
-            
-            // else if (patterns[i].type == SUBS_REG && rd == 31) {
-            //     d.type = CMP_REG;
-            //     printf("CMP Register (detected via rd=XZR)\n");
-            // }
-            
-            // else {
-            //     d.type = patterns[i].type;
-            //     printf("Detected Instruction: %s\n", patterns[i].name);
-            // }
-
             d.type = patterns[i].type;
             printf("Detected Instruction: %s\n", patterns[i].name);
             
@@ -295,26 +304,11 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                     extract_register_fields(instruction, &d);
                     break;
             }
-            
-            // Special handling for conditions in B.cond
+
             if (d.type == B_COND) {
-                // 1) Extract the 4-bit condition from bits [3:0]
-                uint32_t cond = instruction & 0xF;
-            
-                // 2) Extract the 19-bit signed immediate from bits [23:5]
-                //    and sign-extend it, then shift left by 2.
-                int32_t imm19 = (instruction >> 5) & 0x7FFFF; // 19 bits
-                // sign bit is bit 18 of imm19
-                if (imm19 & (1 << 18)) {
-                    // sign-extend: fill upper bits with 1
-                    imm19 |= ~((1 << 19) - 1);
-                }
-                // Each B.cond offset is left-shifted by 2
-                imm19 <<= 2;
-                d.imm = imm19;
-            
-                // 3) Map cond to your InstructionType
-                switch (cond) {
+                extract_bcond_fields(instruction, &d);
+                
+                switch (d.cond) {
                     case 0x0: d.type = BEQ; break; // Z == 1
                     case 0x1: d.type = BNE; break; // Z == 0
                     case 0xa: d.type = BGE; break; // N == V (but V=0 => N=0 => X1 >= X2)
@@ -322,13 +316,11 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                     case 0xc: d.type = BGT; break; // Z==0 && N==V => (Z=0 && N=0 => X1 > X2)
                     case 0xd: d.type = BLE; break; // Z==1 || N!=V => (Z=1 || N=1 => X1 <= X2)
                     default:
-                        // If you don't plan to handle other cond codes, mark as unknown
-                        // or keep d.type = B_COND. Up to you.
+                        printf("Unsupported condition code: 0x%x\n", d.cond);
                         d.type = UNKNOWN;
                         break;
                 }
             }
-            
             
             return d;
         }
@@ -649,20 +641,21 @@ void ble(DecodedInstruction d) {
 
 void process_instruction() {
     printf("-------------------------- Processing instruction --------------------------\n\n");
-
     // Fetch
     uint32_t instruction = mem_read_32(CURRENT_STATE.PC);
     // printf("Instruction: 0x%08X\n", instruction);
     //in binary
-    printf("Instruction in binary: ");
-    for (int i = 31; i >= 0; i--) {
-        printf("%d", (instruction >> i) & 1);
-        if (i % 4 == 0) printf(" ");
-    }
-    printf("\n");
+    // printf("Instruction in binary: ");
+    // for (int i = 31; i >= 0; i--) {
+    //     printf("%d", (instruction >> i) & 1);
+    //     if (i % 4 == 0) printf(" ");
+    // }
+    // printf("\n");
 
     //Decode
     DecodedInstruction d = decode_instruction(instruction);
+    
+    show_instruction_in_binary(d);
     show_instruction(d);
 
     // Increment PC by default (some instructions might override)
@@ -790,4 +783,7 @@ void process_instruction() {
         default:
             break;
     }
+
+    // Just in case, make register 31 (XZR) read-only
+    CURRENT_STATE.REGS[31] = 0;
 }
