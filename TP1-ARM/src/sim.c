@@ -11,10 +11,10 @@
 #define MASK_32 0xFFFFFFFF
 
 typedef enum {
-    ADDS_IMM,
-    ADDS_REG,
+    ADDS_IMM, // ok
+    ADDS_REG, // ok
     
-    SUBS_IMM,
+    SUBS_IMM, // ok
     
     SUBS_REG,
     HLT,
@@ -56,13 +56,19 @@ typedef enum {
 } InstructionType;
 
 typedef struct {
-    InstructionType type;  // e.g. ADDS_IMM, HLT, etc.
+    InstructionType type;  // Instruction type
+    uint32_t instruction;  // Original instruction
 
-    int rd;     // bits [4:0]
-    int rn;     // bits [9:5]
-    int rm;     // bits [20:16] or wherever Rm lives
-    int64_t imm; // immediate if needed
-    int shift;  // shift amount if needed
+    int rd; // destination register
+    int rn; // first operand register
+    int rm; // second operand register (if applicable)
+    int64_t imm; // immediate value (if applicable)
+    int shift; // shift amount (if applicable)
+
+    // int updates_flags;         // Whether instruction updates flags (1) or not (0)
+    // int cond_code;             // For branch conditions (EQ=0, NE=1, etc.)
+    // int mem_size;              // Memory operation size in bytes (1, 2, 4, 8)
+    // int64_t branch_target;     // Calculated absolute address for branches
 
 } DecodedInstruction;
 
@@ -76,7 +82,6 @@ typedef struct {
 
 void show_instruction(DecodedInstruction d) {
     printf("Decoded Instruction: ");
-    printf("Type: %d", d.type);
     printf(" | rd: %d", d.rd);
     printf(" | rn: %d", d.rn);
     printf(" | rm: %d", d.rm);
@@ -168,19 +173,23 @@ void extract_memory_fields(uint32_t instruction, DecodedInstruction* d) {
 const InstructionPattern patterns[] = {
     // System instructions
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
+
+    // CMP
+    {0xFF80001F, 0xF100001F, CMP_IMM, "CMP Immediate"},     // SUBS with rd=XZR
+    {0xFFE0FC1F, 0xEB00001F, CMP_REG, "CMP Register"},    // SUBS with rd=XZR
     
     // Data processing immediate
     {0xFF800000, 0xF1000000, SUBS_IMM, "SUBS Immediate"},   //1111 0001 0000 XXXX XXXX XXXX XXXX XXXX
     {0xFF800000, 0xB1000000, ADDS_IMM, "ADDS Immediate"},   // 1011 0001 0000 XXXX XXXX XXXX XXXX XXXX
     {0xFF800000, 0x91000000, ADD_IMM, "ADD Immediate"},     // 1001 0001 0000 XXXX XXXX XXXX XXXX XXXX
-    {0xFF800000, 0xD1000000, SUB_IMM, "SUB Immediate"},     // 1101 0001 0000 XXXX XXXX XXXX XXXX XXXX
-    {0xFF800000, 0xF1000000, CMP_IMM, "CMP Immediate"},     // Same as SUBS but rd=XZR -> 1111 0001 0000 XXXX XXXX XXXX XXXX 0000
+    // {0xFF800000, 0xD1000000, SUB_IMM, "SUB Immediate"},     // 1101 0001 0000 XXXX XXXX XXXX XXXX XXXX
+    // {0xFF800000, 0xF1000000, CMP_IMM, "CMP Immediate"},     // Same as SUBS but rd=XZR -> 1111 0001 0000 XXXX XXXX XXXX XXXX 0000
     
     // Data processing register
     {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"}, //
     {0xFFE0FC00, 0xEB000000, SUBS_REG, "SUBS Register"},
     {0xFFE0FC00, 0x8B000000, ADD_REG, "ADD Register"},
-    {0xFFE0FC00, 0xCB000000, SUB_REG, "SUB Register"},
+    // {0xFFE0FC00, 0xCB000000, SUB_REG, "SUB Register"},
     {0xFFE0FC00, 0xEB000000, CMP_REG, "CMP Register"}, // Same as SUBS but rd=XZR
     
     // Logical operations
@@ -218,24 +227,33 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
     DecodedInstruction d;
     memset(&d, 0, sizeof(d));
 
+    d.instruction = instruction;
+
     // Extract rd for special cases e.g CMP
     int rd = instruction & 0x1F;
     
     // Try to match against each pattern
     for (int i = 0; i < PATTERN_COUNT; i++) {
         if ((instruction & patterns[i].mask) == patterns[i].value) {
-            if (patterns[i].type == SUBS_IMM && rd == 31) {
-                d.type = CMP_IMM;
-                printf("CMP Immediate (detected via rd=XZR)\n");
-            }
-            else if (patterns[i].type == SUBS_REG && rd == 31) {
-                d.type = CMP_REG;
-                printf("CMP Register (detected via rd=XZR)\n");
-            }
-            else {
-                d.type = patterns[i].type;
-                printf("Detected Instruction: %s\n", patterns[i].name);
-            }
+            
+            // //special case for CMP
+            // if (patterns[i].type == SUBS_IMM && rd == 31) {
+            //     d.type = CMP_IMM;
+            //     printf("CMP Immediate (detected via rd=XZR)\n");
+            // }
+            
+            // else if (patterns[i].type == SUBS_REG && rd == 31) {
+            //     d.type = CMP_REG;
+            //     printf("CMP Register (detected via rd=XZR)\n");
+            // }
+            
+            // else {
+            //     d.type = patterns[i].type;
+            //     printf("Detected Instruction: %s\n", patterns[i].name);
+            // }
+
+            d.type = patterns[i].type;
+            printf("Detected Instruction: %s\n", patterns[i].name);
             
             // Extract fields based on instruction type
             switch (d.type) {
@@ -243,12 +261,14 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case SUBS_IMM:
                 case ADD_IMM:
                 case SUB_IMM:
-                // case CMP_IMM:
+                case CMP_IMM:
                     extract_immediate_fields(instruction, &d);
                     break;
+                
                 case MOVZ:
                     extract_movz_fields(instruction, &d);
                     break;
+                
                 case LSL_IMM:
                 case LSR_IMM:
                     extract_shift_fields(instruction, &d);
@@ -267,7 +287,7 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case SUB_REG:
                 case ADDS_REG:
                 case ADD_REG:
-                // case CMP_REG:
+                case CMP_REG:
                 case ANDS_REG:
                 case EOR_REG:
                 case ORR_REG:
@@ -365,15 +385,15 @@ void hlt() {
 
 void cmp_imm(DecodedInstruction d) {
     printf("Executing CMP_IMM\n");
-    // CMP Rd, imm - subtracts the immediate from Rd and updates flags
-    int64_t result = CURRENT_STATE.REGS[d.rd] - d.imm;
+    // CMP Rn, imm - subtracts the immediate from Rn and updates flags
+    int64_t result = CURRENT_STATE.REGS[d.rn] - d.imm;
     update_flags(result, 1);
 }
 
 void cmp_reg(DecodedInstruction d) {
     printf("Executing CMP_REG\n");
-    // CMP Rd, Rm - subtracts Rm from Rd and updates flags
-    int64_t result = CURRENT_STATE.REGS[d.rd] - CURRENT_STATE.REGS[d.rm];
+    // CMP Rn, Rm - subtracts Rm from Rn and updates flags
+    int64_t result = CURRENT_STATE.REGS[d.rn] - CURRENT_STATE.REGS[d.rm];
     update_flags(result, 1);
 }
 
@@ -633,13 +653,13 @@ void process_instruction() {
     // Fetch
     uint32_t instruction = mem_read_32(CURRENT_STATE.PC);
     // printf("Instruction: 0x%08X\n", instruction);
-    // //in binary
-    // printf("Instruction in binary: ");
-    // for (int i = 31; i >= 0; i--) {
-    //     printf("%d", (instruction >> i) & 1);
-    //     if (i % 4 == 0) printf(" ");
-    // }
-    // printf("\n");
+    //in binary
+    printf("Instruction in binary: ");
+    for (int i = 31; i >= 0; i--) {
+        printf("%d", (instruction >> i) & 1);
+        if (i % 4 == 0) printf(" ");
+    }
+    printf("\n");
 
     //Decode
     DecodedInstruction d = decode_instruction(instruction);
