@@ -119,6 +119,7 @@ void extract_movz_fields(uint32_t instruction, DecodedInstruction* d) {
     uint32_t hw = (instruction >> 21) & 0x3; //[22:21]
     
     if (hw != 0) {
+        // just in case, i am only implementing hw=0
         printf("Warning: MOVZ with hw != 0 not supported\n");
     }
 
@@ -243,6 +244,8 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case ADD_IMM:
                 case SUB_IMM:
                 // case CMP_IMM:
+                    extract_immediate_fields(instruction, &d);
+                    break;
                 case MOVZ:
                     extract_movz_fields(instruction, &d);
                     break;
