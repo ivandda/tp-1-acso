@@ -8,7 +8,7 @@ void update_flags(int64_t result, int updateFlags) {
         NEXT_STATE.FLAG_Z = (result == 0);    // Zero flag
         NEXT_STATE.FLAG_N = (result < 0);     // Negative flag
         
-        // In this case C and V flags are assumed to be 0 for all operations per requirements
+        //C and V flags are assumed to be 0 for all operations per requirements
     }
 }
 
@@ -48,14 +48,12 @@ void hlt() {
 
 void cmp_imm(DecodedInstruction d) {
     printf("Executing CMP_IMM\n");
-    // CMP Rn, imm - subtracts the immediate from Rn and updates flags
     int64_t result = CURRENT_STATE.REGS[d.rn] - d.imm;
     update_flags(result, 1);
 }
 
 void cmp_reg(DecodedInstruction d) {
     printf("Executing CMP_REG\n");
-    // CMP Rn, Rm - subtracts Rm from Rn and updates flags
     int64_t result = CURRENT_STATE.REGS[d.rn] - CURRENT_STATE.REGS[d.rm];
     update_flags(result, 1);
 }
@@ -90,7 +88,6 @@ void stur(DecodedInstruction d) {
     printf("Executing STUR\n");
     //stur X1, [X2, #0x10] (descripción: M[X2 + 0x10] = X1)
     
-    // Calculate memory address: base register + immediate offset
     uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
     
     // Store full 64-bit value from Xn to memory
@@ -111,10 +108,8 @@ void stur(DecodedInstruction d) {
 void sturh(DecodedInstruction d) {
     printf("Executing STURH\n");
     
-    // Calculate memory address
     uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
     
-    // Read the current memory value so we can preserve other halfwords
     uint32_t current_value = mem_read_32(address);
     
     // Extract halfword position within the word (0-1)
@@ -128,7 +123,6 @@ void sturh(DecodedInstruction d) {
     uint32_t new_value = (current_value & ~halfword_mask) | 
                         (halfword_to_store << (halfword_position * 16));
     
-    // Write back to memory
     mem_write_32(address & ~0x3, new_value);
     
     printf("Stored halfword 0x%x at address 0x%lx\n", halfword_to_store, address);
@@ -137,10 +131,8 @@ void sturh(DecodedInstruction d) {
 void sturb(DecodedInstruction d) {
     printf("Executing STURB\n");
     
-    // Calculate memory address
     uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
     
-    // Read the current memory value so we can preserve other bytes
     uint32_t current_value = mem_read_32(address);
     
     // Extract byte position within the word (0-3)
@@ -154,7 +146,6 @@ void sturb(DecodedInstruction d) {
     uint32_t new_value = (current_value & ~byte_mask) | 
                          (byte_to_store << (byte_position * 8));
     
-    // Write back to memory
     mem_write_32(address & ~0x3, new_value);
     
     printf("Stored byte 0x%x at address 0x%lx\n", byte_to_store, address);
@@ -177,7 +168,6 @@ void lsr_imm(DecodedInstruction d) {
     
     int shift_amount = d.imm;
     
-    // Use unsigned right shift to ensure zero-filling from left
     uint64_t unsigned_value = (uint64_t)CURRENT_STATE.REGS[d.rn];
     uint64_t result = unsigned_value >> shift_amount;
     
@@ -230,22 +220,17 @@ void ldurh(DecodedInstruction d) {
 void ldurb(DecodedInstruction d) {
     printf("Executing LDURB\n");
     
-    // Calculate memory address
     uint64_t address = CURRENT_STATE.REGS[d.rn] + d.imm;
     
-    // Read the 32-bit word containing our byte
     uint32_t word = mem_read_32(address & ~0x3);
     
-    // Extract byte position within the word (0-3)
     int byte_position = address & 0x3;
     
-    // Extract the byte (8 bits)
     uint8_t byte_value = (word >> (byte_position * 8)) & 0xFF;
     
     // Zero-extend to 64 bits (56 zeros followed by 8 bits)
     int64_t result = byte_value;
     
-    // Store in destination register
     NEXT_STATE.REGS[d.rd] = result;
     
     printf("X%d = Zero-extend(Memory[0x%lx](7:0)) = 0x%lx\n", d.rd, address, result);
@@ -284,7 +269,7 @@ void bne(DecodedInstruction d) {
 
 void bgt(DecodedInstruction d) {
     printf("Executing BGT\n");
-    // Branch if (Z == 0 && N == 0) under your assumption C=V=0
+    // Branch if (Z == 0 && N == 0) (with C=V=0)
     if (CURRENT_STATE.FLAG_Z == 0 && CURRENT_STATE.FLAG_N == 0) {
         NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
     }
@@ -317,7 +302,6 @@ void ble(DecodedInstruction d) {
 void b(DecodedInstruction d) {
     printf("Executing B\n");
     
-    // Update PC with the PC-relative branch target
     NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
     
     printf("Branching to PC + %ld = 0x%lx\n", d.imm, NEXT_STATE.PC);
@@ -326,12 +310,6 @@ void b(DecodedInstruction d) {
 void br(DecodedInstruction d) {
     printf("Executing BR\n");
     
-    // Extract Rn register (bits [9:5]) if not already done
-    if (d.rn == 0 && ((d.instruction >> 5) & 0x1F != 0)) {
-        d.rn = (d.instruction >> 5) & 0x1F;
-    }
-    
-    // Jump to address in register Rn
     NEXT_STATE.PC = CURRENT_STATE.REGS[d.rn];
     
     printf("Branching to address in X%d = 0x%lx\n", d.rn, NEXT_STATE.PC);
@@ -340,10 +318,8 @@ void br(DecodedInstruction d) {
 void mul(DecodedInstruction d) {
     printf("Executing MUL\n");
     
-    // Multiply values from Rn and Rm registers
     int64_t result = CURRENT_STATE.REGS[d.rn] * CURRENT_STATE.REGS[d.rm];
     
-    // Store result in Rd register
     NEXT_STATE.REGS[d.rd] = result;
     
     printf("X%d = X%d * X%d = %ld\n", d.rd, d.rn, d.rm, result);
@@ -353,7 +329,6 @@ void cbz(DecodedInstruction d) {
     printf("Executing CBZ\n");
 
     if (CURRENT_STATE.REGS[d.rd] == 0) {
-        // Branch to PC-relative address
         NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
         printf("X%d is zero, branching to PC + %ld = 0x%lx\n", d.rd, d.imm, NEXT_STATE.PC);
     } else {
@@ -365,7 +340,6 @@ void cbnz(DecodedInstruction d) {
     printf("Executing CBNZ\n");
     
     if (CURRENT_STATE.REGS[d.rd] != 0) {
-        // Branch to PC-relative address
         NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
         printf("X%d is not zero (%ld), branching to PC + %ld = 0x%lx\n", 
                d.rd, CURRENT_STATE.REGS[d.rd], d.imm, NEXT_STATE.PC);

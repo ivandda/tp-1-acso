@@ -148,8 +148,8 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
     return d;
 }
 
-// Field extraction functions (to be called after matching a pattern)
 
+// Field extraction functions (to be called after matching a pattern)
 void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
     //     Las instrucciones LSL y LSR, y como mencionamos en el punto 4 ADDS y SUBS usan shift. Para todas las demás instrucciones, pueden asumir que el shift (o shift amount [shamt]) es cero.
         
@@ -181,7 +181,7 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
         uint32_t hw = (instruction >> 21) & 0x3; //[22:21]
         
         if (hw != 0) {
-            // just in case, i am only implementing hw=0
+            // just in case, for the custom tests
             printf("Warning: MOVZ with hw != 0 not supported\n");
         }
     
@@ -217,7 +217,6 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
         d->rn = (instruction >> 5) & 0x1F;         // bits [9:5]
         int imm9 = (instruction >> 12) & 0x1FF;    // bits [20:12]
         
-        // Sign extend imm9 (if bit 8 is set, fill bits 9-63 with 1s)
         if (imm9 & 0x100) {
             imm9 |= ~0x1FF;  // Sign extension
         }
@@ -226,15 +225,12 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
     }
     
     void extract_bcond_fields(uint32_t instruction, DecodedInstruction* d) {
-        // Extract the 4-bit condition from bits [3:0]
         d->cond = instruction & 0xF;
         
-        // Extract the 19-bit signed immediate from bits [23:5]
-        int32_t imm19 = (instruction >> 5) & 0x7FFFF;
+        int32_t imm19 = (instruction >> 5) & 0x7FFFF; //[23:5]
         
-        // Sign-extend if necessary
         if (imm19 & (1 << 18)) {
-            imm19 |= ~((1 << 19) - 1);
+            imm19 |= ~((1 << 19) - 1); // Sign-extend
         }
         
         // Each B.cond offset is left-shifted by 2
@@ -244,8 +240,7 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
     
     // Extract branch fields for B instruction
     void extract_b_fields(uint32_t instruction, DecodedInstruction* d) {
-        // Extract imm26 from bits [25:0]
-        int32_t imm26 = instruction & 0x3FFFFFF;
+        int32_t imm26 = instruction & 0x3FFFFFF; //[25:0]
         
         // Sign-extend if necessary (if bit 25 is set)
         if (imm26 & 0x2000000) {
@@ -262,8 +257,7 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
     void extract_cb_fields(uint32_t instruction, DecodedInstruction* d) {
         d->rd = instruction & 0x1F;
         
-        // Extract imm19 from bits [23:5]
-        int32_t imm19 = (instruction >> 5) & 0x7FFFF;
+        int32_t imm19 = (instruction >> 5) & 0x7FFFF; //[23:5]
         
         // Sign-extend if necessary (if bit 18 is set)
         if (imm19 & 0x40000) {
@@ -277,6 +271,5 @@ void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
     }
     
     void extract_br_fields(uint32_t instruction, DecodedInstruction* d) {
-        // Extract the register number from bits [4:0]
-        d->rn = instruction & 0x1F;
+        d->rn = instruction & 0x1F; // [4:0]
     }
