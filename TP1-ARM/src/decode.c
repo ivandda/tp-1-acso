@@ -4,7 +4,7 @@
 
 // Instructions patterns 
 // Ordered from "bigger" to "smaller" masks to avoid false positives
-// The order of the patterns is important, as the first match will be used
+// I made this because the order of the patterns is important, as the first match will be used
 const InstructionPattern patterns[] = {
     // System instructions (29 bits)
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
@@ -150,6 +150,9 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
 
 
 // Field extraction functions (to be called after matching a pattern)
+// Each function extracts the relevant fields from the instruction based on its type
+// The extracted fields are stored in the DecodedInstruction struct
+// I tried to make is as general / rehusable and modular as possible
 void extract_immediate_fields(uint32_t instruction, DecodedInstruction* d) {
     //     Las instrucciones LSL y LSR, y como mencionamos en el punto 4 ADDS y SUBS usan shift. Para todas las demás instrucciones, pueden asumir que el shift (o shift amount [shamt]) es cero.
         

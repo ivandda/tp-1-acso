@@ -3,6 +3,8 @@
 #include "utils.h"
 #include <stdio.h>
 
+// Function to update flags based on the result of an operation
+
 void update_flags(int64_t result, int updateFlags) {
     if (updateFlags) {
         NEXT_STATE.FLAG_Z = (result == 0);    // Zero flag
@@ -12,6 +14,9 @@ void update_flags(int64_t result, int updateFlags) {
     }
 }
 
+
+// Functions to execute instructions
+// There is some repeted code, but for testing, debugging and readability, I think is better to have it like this
 
 void adds_imm(DecodedInstruction d) {
     printf("Executing ADDS_IMM\n");

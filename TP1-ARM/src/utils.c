@@ -1,6 +1,9 @@
 #include "utils.h"
 #include <stdio.h>
 
+// some utility functions to show the instruction in a readable format
+// mainly for debugging purposes
+
 void show_instruction(DecodedInstruction d) {
     printf("Decoded Instruction: ");
     printf(" | rd: %d", d.rd);
