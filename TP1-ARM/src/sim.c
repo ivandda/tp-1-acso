@@ -2,13 +2,6 @@
 #include <assert.h>
 #include <string.h>
 #include "shell.h"
-// 138
-
-// define masks for the different sizes
-#define MASK_8 0xFF000000
-#define FIRST_9 0xFF800000 //1111 1111 1000 0000 0000 0000 0000 0000
-#define MASK_16 0xFFFF0000
-#define MASK_32 0xFFFFFFFF
 
 typedef enum {
     ADDS_IMM, // ok
@@ -16,11 +9,11 @@ typedef enum {
     
     SUBS_IMM, // ok
     
-    SUBS_REG,
-    HLT,
+    SUBS_REG, // ok
+    HLT, //ok
 
-    CMP_IMM,
-    CMP_REG,
+    CMP_IMM, // ok
+    CMP_REG, // ok
     
     ANDS_REG,
     EOR_REG,
@@ -48,8 +41,8 @@ typedef enum {
     CBZ,
     CBNZ,
     
-    SUB_IMM,
-    SUB_REG,
+    // SUB_IMM,
+    // SUB_REG,
     B_COND,
     
     UNKNOWN
@@ -194,7 +187,8 @@ void extract_bcond_fields(uint32_t instruction, DecodedInstruction* d) {
 }
 
 // Instructions patterns 
-// Ordered from most specific to least specific to prevent false positives
+// Ordered from "bigger" to "smaller" masks to avoid false positives
+// The order of the patterns is important, as the first match will be used
 const InstructionPattern patterns[] = {
     // System instructions
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
@@ -207,15 +201,11 @@ const InstructionPattern patterns[] = {
     {0xFF800000, 0xF1000000, SUBS_IMM, "SUBS Immediate"},   //1111 0001 0000 XXXX XXXX XXXX XXXX XXXX
     {0xFF800000, 0xB1000000, ADDS_IMM, "ADDS Immediate"},   // 1011 0001 0000 XXXX XXXX XXXX XXXX XXXX
     {0xFF800000, 0x91000000, ADD_IMM, "ADD Immediate"},     // 1001 0001 0000 XXXX XXXX XXXX XXXX XXXX
-    // {0xFF800000, 0xD1000000, SUB_IMM, "SUB Immediate"},     // 1101 0001 0000 XXXX XXXX XXXX XXXX XXXX
-    // {0xFF800000, 0xF1000000, CMP_IMM, "CMP Immediate"},     // Same as SUBS but rd=XZR -> 1111 0001 0000 XXXX XXXX XXXX XXXX 0000
     
     // Data processing register
     {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"}, //
     {0xFFE0FC00, 0xEB000000, SUBS_REG, "SUBS Register"},
     {0xFFE0FC00, 0x8B000000, ADD_REG, "ADD Register"},
-    // {0xFFE0FC00, 0xCB000000, SUB_REG, "SUB Register"},
-    {0xFFE0FC00, 0xEB000000, CMP_REG, "CMP Register"}, // Same as SUBS but rd=XZR
     
     // Logical operations
     {0xFFE0FC00, 0xEA000000, ANDS_REG, "ANDS Register"},
@@ -269,7 +259,7 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case ADDS_IMM:
                 case SUBS_IMM:
                 case ADD_IMM:
-                case SUB_IMM:
+                case ADD_REG:
                 case CMP_IMM:
                     extract_immediate_fields(instruction, &d);
                     break;
@@ -293,9 +283,7 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                     break;
                     
                 case SUBS_REG:
-                case SUB_REG:
                 case ADDS_REG:
-                case ADD_REG:
                 case CMP_REG:
                 case ANDS_REG:
                 case EOR_REG:
@@ -326,7 +314,6 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
         }
     }
     
-    // No match found
     d.type = UNKNOWN;
     printf("Unknown instruction\n");
     return d;
@@ -334,10 +321,10 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
 
 void update_flags(int64_t result, int updateFlags) {
     if (updateFlags) {
-        NEXT_STATE.FLAG_Z = (result == 0);    // Zero flag - set if result is zero
-        NEXT_STATE.FLAG_N = (result < 0);     // Negative flag - set if result is negative
+        NEXT_STATE.FLAG_Z = (result == 0);    // Zero flag
+        NEXT_STATE.FLAG_N = (result < 0);     // Negative flag
         
-        // Note: C and V flags are assumed to be 0 for all operations per requirements
+        // In this case C and V flags are assumed to be 0 for all operations per requirements
     }
 }
 
@@ -583,11 +570,16 @@ void ldurb(DecodedInstruction d) {
 
 void add_imm(DecodedInstruction d) {
     printf("Executing ADD_IMM\n");
-    // ADD Rd, Rn, imm - adds the immediate to Rn and stores in Rd
     int64_t result = CURRENT_STATE.REGS[d.rn] + d.imm;
     NEXT_STATE.REGS[d.rd] = result;
-    // Regular ADD does not update flags (use 0 as second parameter)
-    update_flags(result, 0);  // 0 means don't update flags
+    update_flags(result, 0);
+}
+
+void add_reg(DecodedInstruction d) {
+    printf("Executing ADD_REG\n");
+    int64_t result = CURRENT_STATE.REGS[d.rn] + CURRENT_STATE.REGS[d.rm];
+    NEXT_STATE.REGS[d.rd] = result;
+    update_flags(result, 0);
 }
 
 void beq(DecodedInstruction d) {
@@ -641,149 +633,51 @@ void ble(DecodedInstruction d) {
 
 void process_instruction() {
     printf("-------------------------- Processing instruction --------------------------\n\n");
-    // Fetch
     uint32_t instruction = mem_read_32(CURRENT_STATE.PC);
-    // printf("Instruction: 0x%08X\n", instruction);
-    //in binary
-    // printf("Instruction in binary: ");
-    // for (int i = 31; i >= 0; i--) {
-    //     printf("%d", (instruction >> i) & 1);
-    //     if (i % 4 == 0) printf(" ");
-    // }
-    // printf("\n");
-
-    //Decode
     DecodedInstruction d = decode_instruction(instruction);
-    
     show_instruction_in_binary(d);
     show_instruction(d);
 
-    // Increment PC by default (some instructions might override)
+    // In some cases (e.g. branches), the PC is updated in the instruction itself
+    // But this is the default behavior
     NEXT_STATE.PC = CURRENT_STATE.PC + 4;
 
-    // Execute
     switch (d.type) {
-        case ADDS_IMM: {
-            adds_imm(d);
-            break;
-        }
+        case ADDS_IMM: adds_imm(d); break;
+        case ADDS_REG: adds_reg(d); break;
+        case SUBS_IMM: subs_imm(d); break;
+        case SUBS_REG: subs_reg(d); break;
+        case ANDS_REG: ands_reg(d); break;
+        case CMP_IMM: cmp_imm(d); break;
+        case CMP_REG: cmp_reg(d); break;
+        case HLT: hlt(); break;
+        case EOR_REG: eor_reg(d); break;
+        case ORR_REG: orr_reg(d); break;
+        case MOVZ: movz(d); break;
+        case STUR: stur(d); break;
+        case STURB: sturb(d); break;
+        case STURH: sturh(d); break;
+        case LSL_IMM: lsl_imm(d); break;
+        case LSR_IMM: lsr_imm(d); break;
+        case LDUR: ldur(d); break;
+        case LDURH: ldurh(d); break;
+        case LDURB: ldurb(d); break;
+        case BEQ: beq(d); break;
+        case BNE: bne(d); break;
+        case BGT: bgt(d); break;
+        case BLT: blt(d); break;
+        case BGE: bge(d); break;
+        case BLE: ble(d); break;
 
-        case ADDS_REG: {
-            adds_reg(d);
-            break;
-        }
-
-        case SUBS_IMM: {
-            subs_imm(d);
-            break;
-        }
-
-        case SUBS_REG: {
-            subs_reg(d);
-            break;
-        }
-
-        case ANDS_REG: {
-            ands_reg(d);
-            break;
-        }
-
-        case CMP_IMM: {
-            cmp_imm(d);
-            break;
-        }
-        case CMP_REG: {
-            cmp_reg(d);
-            break;
-        }
-
-        case HLT: {
-            hlt();
-            break;
-        }
-
-        case EOR_REG: {
-            eor_reg(d);
-            break;
-        }
-
-        case ORR_REG: {
-            orr_reg(d);
-            break;
-        }
-
-        case MOVZ: {
-            movz(d);
-            break;
-        }
-
-        case STUR: {
-            stur(d);
-            break;
-        }
-        case STURB: {
-            sturb(d);
-            break;
-        }
-        case STURH: {
-            sturh(d);
-            break;
-        }
-        case LSL_IMM: {
-            lsl_imm(d);
-            break;
-        }
-        case LSR_IMM: {
-            lsr_imm(d);
-            break;
-        }
-        case LDUR: {
-            ldur(d);
-            break;
-        }
-        case LDURH: {
-            ldurh(d);
-            break;
-        }
-        case LDURB: {
-            ldurb(d);
-            break;
-        }
-
-        case BEQ: {
-            beq(d);
-            break;
-        }
-
-        case BNE: {
-            bne(d);
-            break;
-        }
-
-        case BGT: {
-            bgt(d);
-            break;
-        }
-
-        case BLT: {
-            blt(d);
-            break;
-        }
-
-        case BGE: {
-            bge(d);
-            break;
-        }
-
-        case BLE: {
-            ble(d);
-            break;
-        } 
-
-        default:
-            break;
+        case B: b(d); break;
+        case BR: br(d); break;
+        case ADD_IMM: add_imm(d); break;
+        case ADD_REG: add_reg(d); break;
+        case MUL: mul(d); break;
+        case CBZ: cbz(d); break;
+        case CBNZ: cbnz(d); break;
+        default: break;
     }
 
-    // Just in case, make register 31 (XZR) read-only
     CURRENT_STATE.REGS[31] = 0;
 }
