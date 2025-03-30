@@ -186,12 +186,52 @@ void extract_bcond_fields(uint32_t instruction, DecodedInstruction* d) {
     d->imm = imm19;
 }
 
+// Extract branch fields for B instruction
+void extract_b_fields(uint32_t instruction, DecodedInstruction* d) {
+    // Extract imm26 from bits [25:0]
+    int32_t imm26 = instruction & 0x3FFFFFF;
+    
+    // Sign-extend if necessary (if bit 25 is set)
+    if (imm26 & 0x2000000) {
+        imm26 |= 0xFC000000;  // Extend with 1s
+    }
+    
+    // Shift left by 2 bits (multiply by 4) for word alignment
+    imm26 <<= 2;
+    
+    d->imm = imm26;
+}
+
+// Extract CBZ/CBNZ fields
+void extract_cb_fields(uint32_t instruction, DecodedInstruction* d) {
+    d->rd = instruction & 0x1F;
+    
+    // Extract imm19 from bits [23:5]
+    int32_t imm19 = (instruction >> 5) & 0x7FFFF;
+    
+    // Sign-extend if necessary (if bit 18 is set)
+    if (imm19 & 0x40000) {
+        imm19 |= 0xFFF80000;  // Extend with 1s
+    }
+    
+    // Shift left by 2 bits for word alignment
+    imm19 <<= 2;
+    
+    d->imm = imm19;
+}
+
+void extract_br_fields(uint32_t instruction, DecodedInstruction* d) {
+    // Extract the register number from bits [4:0]
+    d->rn = instruction & 0x1F;
+}
+
 // Instructions patterns 
 // Ordered from "bigger" to "smaller" masks to avoid false positives
 // The order of the patterns is important, as the first match will be used
 const InstructionPattern patterns[] = {
     // System instructions
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
+    {0xFFFFFC1F, 0xD61F0000, BR, "BR"},
 
     // CMP
     {0xFF80001F, 0xF100001F, CMP_IMM, "CMP Immediate"},     // SUBS with rd=XZR
@@ -214,7 +254,6 @@ const InstructionPattern patterns[] = {
     
     // Branches
     {0xFC000000, 0x14000000, B, "B"},
-    {0xFFFFFC1F, 0xD61F0000, BR, "BR"},
     {0xFF000010, 0x54000000, B_COND, "B.cond"}, // Additional check needed for condition
     {0x7F000000, 0x34000000, CBZ, "CBZ"},
     {0x7F000000, 0x35000000, CBNZ, "CBNZ"},
@@ -230,6 +269,7 @@ const InstructionPattern patterns[] = {
     // Data processing miscellaneous
     {0xFF800000, 0xD2800000, MOVZ, "MOVZ"},
     {0xFFE0FC00, 0x9B000000, MUL, "MUL"},
+    
     {0xFFC00000, 0xD3400000, LSL_IMM, "LSL Immediate"},
     {0xFFC00000, 0xD3800000, LSR_IMM, "LSR Immediate"} //this can be the wrong code
 };
@@ -291,6 +331,17 @@ DecodedInstruction decode_instruction(uint32_t instruction) {
                 case MUL:
                     extract_register_fields(instruction, &d);
                     break;
+
+                case B:
+                extract_b_fields(instruction, &d);
+                break;
+                case BR:
+                    extract_br_fields(instruction, &d);
+                    break;
+                case CBZ:
+                case CBNZ:
+                extract_cb_fields(instruction, &d);
+                break;
             }
 
             if (d.type == B_COND) {
@@ -627,6 +678,66 @@ void ble(DecodedInstruction d) {
     // Branch if Z == 1 || N == 1
     if (CURRENT_STATE.FLAG_Z == 1 || CURRENT_STATE.FLAG_N == 1) {
         NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    }
+}
+
+void b(DecodedInstruction d) {
+    printf("Executing B\n");
+    
+    // Update PC with the PC-relative branch target
+    NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+    
+    printf("Branching to PC + %ld = 0x%lx\n", d.imm, NEXT_STATE.PC);
+}
+
+void br(DecodedInstruction d) {
+    printf("Executing BR\n");
+    
+    // Extract Rn register (bits [9:5]) if not already done
+    if (d.rn == 0 && ((d.instruction >> 5) & 0x1F != 0)) {
+        d.rn = (d.instruction >> 5) & 0x1F;
+    }
+    
+    // Jump to address in register Rn
+    NEXT_STATE.PC = CURRENT_STATE.REGS[d.rn];
+    
+    printf("Branching to address in X%d = 0x%lx\n", d.rn, NEXT_STATE.PC);
+}
+
+void mul(DecodedInstruction d) {
+    printf("Executing MUL\n");
+    
+    // Multiply values from Rn and Rm registers
+    int64_t result = CURRENT_STATE.REGS[d.rn] * CURRENT_STATE.REGS[d.rm];
+    
+    // Store result in Rd register
+    NEXT_STATE.REGS[d.rd] = result;
+    
+    printf("X%d = X%d * X%d = %ld\n", d.rd, d.rn, d.rm, result);
+}
+
+void cbz(DecodedInstruction d) {
+    printf("Executing CBZ\n");
+
+    if (CURRENT_STATE.REGS[d.rd] == 0) {
+        // Branch to PC-relative address
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+        printf("X%d is zero, branching to PC + %ld = 0x%lx\n", d.rd, d.imm, NEXT_STATE.PC);
+    } else {
+        printf("X%d is not zero (%ld), not branching\n", d.rd, CURRENT_STATE.REGS[d.rd]);
+    }
+}
+
+void cbnz(DecodedInstruction d) {
+    printf("Executing CBNZ\n");
+    
+    if (CURRENT_STATE.REGS[d.rd] != 0) {
+        // Branch to PC-relative address
+        NEXT_STATE.PC = CURRENT_STATE.PC + d.imm;
+        printf("X%d is not zero (%ld), branching to PC + %ld = 0x%lx\n", 
+               d.rd, CURRENT_STATE.REGS[d.rd], d.imm, NEXT_STATE.PC);
+    } else {
+        printf("X%d is zero, not branching\n", d.rd);
     }
 }
 
