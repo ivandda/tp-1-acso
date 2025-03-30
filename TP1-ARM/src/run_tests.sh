@@ -21,7 +21,7 @@ quit
 EOF
 
     # Run your simulator and capture its output
-    ./sim_final "$test" <<EOF > "$OUTPUT_DIR"/sim_output_"$TEST_NAME".txt
+    ./sim "$test" <<EOF > "$OUTPUT_DIR"/sim_output_"$TEST_NAME".txt
 go
 rdump
 quit

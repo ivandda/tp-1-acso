@@ -1,3 +1,5 @@
+Running test for ../inputs/tests_1/addis_2.x
+Test ../inputs/tests_1/addis_2.x passed.
 Running test for ../inputs/tests_1/addis.x
 Test ../inputs/tests_1/addis.x passed.
 Running test for ../inputs/tests_1/adds-subs.x
@@ -6,6 +8,12 @@ Running test for ../inputs/tests_1/adds.x
 Test ../inputs/tests_1/adds.x passed.
 Running test for ../inputs/tests_1/ands.x
 Test ../inputs/tests_1/ands.x passed.
+Running test for ../inputs/tests_1/b_2.x
+Test ../inputs/tests_1/b_2.x failed. Differences:
+37c37
+< X31: 0xfffffffffffffffb
+---
+> X31: 0x0
 Running test for ../inputs/tests_1/beq_2.x
 Test ../inputs/tests_1/beq_2.x passed.
 Running test for ../inputs/tests_1/beq.x
@@ -18,12 +26,22 @@ Test ../inputs/tests_1/blt_2.x failed. Differences:
 > X31: 0x0
 Running test for ../inputs/tests_1/blt.x
 Test ../inputs/tests_1/blt.x passed.
+Running test for ../inputs/tests_1/cpm_2.x
+Test ../inputs/tests_1/cpm_2.x failed. Differences:
+37c37
+< X31: 0xfffffffffffffffb
+---
+> X31: 0x0
 Running test for ../inputs/tests_1/eor.x
 Test ../inputs/tests_1/eor.x passed.
+Running test for ../inputs/tests_1/logical_2.x
+Test ../inputs/tests_1/logical_2.x passed.
 Running test for ../inputs/tests_1/movz.x
 Test ../inputs/tests_1/movz.x passed.
 Running test for ../inputs/tests_1/sturb.x
 Test ../inputs/tests_1/sturb.x passed.
+Running test for ../inputs/tests_1/subbs_imm_2.x
+Test ../inputs/tests_1/subbs_imm_2.x passed.
 Running test for ../inputs/tests_1/subis.x
 Test ../inputs/tests_1/subis.x passed.
 Running test for ../inputs/tests_1/t_1.x
