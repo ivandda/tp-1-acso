@@ -3,10 +3,10 @@ CC = gcc
 CFLAGS = -g -O0
 
 # List all source files
-SOURCES = sim_final.c decode.c execute.c utils.c shell.c
+SOURCES = sim.c decode.c execute.c utils.c shell.c
 # Create a list of object files from the source files
 OBJECTS = $(SOURCES:.c=.o)
-TARGET = final
+TARGET = sim
 
 # Default target: build the executable
 all: $(TARGET)
