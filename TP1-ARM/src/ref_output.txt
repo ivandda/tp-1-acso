@@ -1,3 +1,13 @@
+ARM Simulator
+
+Read 20 words from program into memory.
+
+ARM-SIM> 
+Simulating...
+
+Simulator halted
+
+ARM-SIM> 
 
 Current register/bus values :
 -------------------------------------
@@ -39,3 +49,5 @@ X31: 0x0
 FLAG_N: 0
 FLAG_Z: 1
 
+ARM-SIM> 
+Bye.

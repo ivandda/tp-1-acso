@@ -229,36 +229,26 @@ void extract_br_fields(uint32_t instruction, DecodedInstruction* d) {
 // Ordered from "bigger" to "smaller" masks to avoid false positives
 // The order of the patterns is important, as the first match will be used
 const InstructionPattern patterns[] = {
-    // System instructions
+    // System instructions (29 bits)
     {0xFFFFFC1F, 0xD4400000, HLT, "HLT"},
     {0xFFFFFC1F, 0xD61F0000, BR, "BR"},
-
-    // CMP
-    {0xFF80001F, 0xF100001F, CMP_IMM, "CMP Immediate"},     // SUBS with rd=XZR
-    {0xFFE0FC1F, 0xEB00001F, CMP_REG, "CMP Register"},    // SUBS with rd=XZR
     
-    // Data processing immediate
-    {0xFF800000, 0xF1000000, SUBS_IMM, "SUBS Immediate"},   //1111 0001 0000 XXXX XXXX XXXX XXXX XXXX
-    {0xFF800000, 0xB1000000, ADDS_IMM, "ADDS Immediate"},   // 1011 0001 0000 XXXX XXXX XXXX XXXX XXXX
-    {0xFF800000, 0x91000000, ADD_IMM, "ADD Immediate"},     // 1001 0001 0000 XXXX XXXX XXXX XXXX XXXX
+    // Register operations with specific flags (21 bits)
+    {0xFFE0FC1F, 0xEB00001F, CMP_REG, "CMP Register"},
     
-    // Data processing register
-    {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"}, //
+    // Register data processing (18 bits)
     {0xFFE0FC00, 0xEB000000, SUBS_REG, "SUBS Register"},
+    {0xFFE0FC00, 0xAB000000, ADDS_REG, "ADDS Register"},
     {0xFFE0FC00, 0x8B000000, ADD_REG, "ADD Register"},
-    
-    // Logical operations
     {0xFFE0FC00, 0xEA000000, ANDS_REG, "ANDS Register"},
-    {0xFFE0FC00, 0xCA000000, EOR_REG, "EOR Register"}, // 1100 1010 0000 XXXX XXXX XXXX XXXX XXXX
+    {0xFFE0FC00, 0xCA000000, EOR_REG, "EOR Register"},
     {0xFFE0FC00, 0xAA000000, ORR_REG, "ORR Register"},
+    {0xFFE0FC00, 0x9B000000, MUL, "MUL"},
     
-    // Branches
-    {0xFC000000, 0x14000000, B, "B"},
-    {0xFF000010, 0x54000000, B_COND, "B.cond"}, // Additional check needed for condition
-    {0x7F000000, 0x34000000, CBZ, "CBZ"},
-    {0x7F000000, 0x35000000, CBNZ, "CBNZ"},
+    // Immediate operations with specific flags (13 bits)
+    {0xFF80001F, 0xF100001F, CMP_IMM, "CMP Immediate"},
     
-    // Memory operations
+    // Memory operations (12 bits)
     {0xFFC00000, 0xF8000000, STUR, "STUR"},
     {0xFFC00000, 0x38000000, STURB, "STURB"},
     {0xFFC00000, 0x78000000, STURH, "STURH"},
@@ -266,12 +256,21 @@ const InstructionPattern patterns[] = {
     {0xFFC00000, 0x38400000, LDURB, "LDURB"},
     {0xFFC00000, 0x78400000, LDURH, "LDURH"},
     
-    // Data processing miscellaneous
-    {0xFF800000, 0xD2800000, MOVZ, "MOVZ"},
-    {0xFFE0FC00, 0x9B000000, MUL, "MUL"},
-    
+    // Data processing with shifts (12 bits)
     {0xFFC00000, 0xD3400000, LSL_IMM, "LSL Immediate"},
-    {0xFFC00000, 0xD3800000, LSR_IMM, "LSR Immediate"} //this can be the wrong code
+    {0xFFC00000, 0xD3800000, LSR_IMM, "LSR Immediate"},
+    
+    // Immediate data processing (9 bits)
+    {0xFF800000, 0xF1000000, SUBS_IMM, "SUBS Immediate"},
+    {0xFF800000, 0xB1000000, ADDS_IMM, "ADDS Immediate"},
+    {0xFF800000, 0x91000000, ADD_IMM, "ADD Immediate"},
+    {0xFF800000, 0xD2800000, MOVZ, "MOVZ"},
+    
+    // Branch operations (9-6 bits)
+    {0xFF000010, 0x54000000, B_COND, "B.cond"},
+    {0x7F000000, 0x34000000, CBZ, "CBZ"},
+    {0x7F000000, 0x35000000, CBNZ, "CBNZ"},
+    {0xFC000000, 0x14000000, B, "B"}
 };
 
 const int PATTERN_COUNT = sizeof(patterns) / sizeof(patterns[0]);

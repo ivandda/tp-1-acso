@@ -1,0 +1,143 @@
+ARM Simulator
+
+Read 20 words from program into memory.
+
+ARM-SIM> 
+Simulating...
+
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0000 1010 0001 
+Decoded Instruction:  | rd: 1 | rn: 0 | rm: 0 | imm: 5 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0000 1010 0010 
+Decoded Instruction:  | rd: 2 | rn: 0 | rm: 0 | imm: 5 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: CMP Register
+Instruction in binary: 1110 1011 0000 0010 0000 0000 0011 1111 
+Decoded Instruction:  | rd: 31 | rn: 1 | rm: 2 | imm: 0 | shift: 0
+Executing CMP_REG
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0001 0100 0011 
+Decoded Instruction:  | rd: 3 | rn: 0 | rm: 0 | imm: 10 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: B.cond
+Instruction in binary: 0101 0100 0000 0000 0000 0000 0100 0000 
+Decoded Instruction:  | rd: 0 | rn: 0 | rm: 0 | imm: 8 | shift: 0
+Executing BEQ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0000 1010 0001 
+Decoded Instruction:  | rd: 1 | rn: 0 | rm: 0 | imm: 5 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0001 0100 0010 
+Decoded Instruction:  | rd: 2 | rn: 0 | rm: 0 | imm: 10 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: CMP Register
+Instruction in binary: 1110 1011 0000 0010 0000 0000 0011 1111 
+Decoded Instruction:  | rd: 31 | rn: 1 | rm: 2 | imm: 0 | shift: 0
+Executing CMP_REG
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: B.cond
+Instruction in binary: 0101 0100 0000 0000 0000 0000 0100 1011 
+Decoded Instruction:  | rd: 0 | rn: 0 | rm: 0 | imm: 8 | shift: 0
+Executing BLT
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0001 0100 0001 
+Decoded Instruction:  | rd: 1 | rn: 0 | rm: 0 | imm: 10 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0001 0100 0010 
+Decoded Instruction:  | rd: 2 | rn: 0 | rm: 0 | imm: 10 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: CMP Register
+Instruction in binary: 1110 1011 0000 0010 0000 0000 0011 1111 
+Decoded Instruction:  | rd: 31 | rn: 1 | rm: 2 | imm: 0 | shift: 0
+Executing CMP_REG
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: B.cond
+Instruction in binary: 0101 0100 0000 0000 0000 0000 0100 1101 
+Decoded Instruction:  | rd: 0 | rn: 0 | rm: 0 | imm: 8 | shift: 0
+Executing BLE
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: MOVZ
+Instruction in binary: 1101 0010 1000 0000 0000 0000 0010 1010 
+Decoded Instruction:  | rd: 10 | rn: 0 | rm: 0 | imm: 1 | shift: 0
+Executing MOVZ
+-------------------------- Processing instruction --------------------------
+
+Detected Instruction: HLT
+Instruction in binary: 1101 0100 0100 0000 0000 0000 0000 0000 
+Decoded Instruction:  | rd: 0 | rn: 0 | rm: 0 | imm: 0 | shift: 0
+Executing HLT
+Simulator halted
+
+ARM-SIM> 
+
+Current register/bus values :
+-------------------------------------
+Instruction Count : 15
+PC                : 0x400048
+Registers:
+X0: 0x0
+X1: 0xa
+X2: 0xa
+X3: 0xa
+X4: 0x0
+X5: 0x0
+X6: 0x0
+X7: 0x0
+X8: 0x0
+X9: 0x0
+X10: 0x1
+X11: 0x0
+X12: 0x0
+X13: 0x0
+X14: 0x0
+X15: 0x0
+X16: 0x0
+X17: 0x0
+X18: 0x0
+X19: 0x0
+X20: 0x0
+X21: 0x0
+X22: 0x0
+X23: 0x0
+X24: 0x0
+X25: 0x0
+X26: 0x0
+X27: 0x0
+X28: 0x0
+X29: 0x0
+X30: 0x0
+X31: 0x0
+FLAG_N: 0
+FLAG_Z: 1
+
+ARM-SIM> 
+Bye.
